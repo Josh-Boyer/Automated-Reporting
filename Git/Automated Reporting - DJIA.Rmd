@@ -1,0 +1,150 @@
+---
+title: "Automated Reporting: DJIA"
+author: "Joshua Boyer"
+date: date()
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+#       User defined variables
+# It is only necessary to alter the values contained here
+
+# Dates: enter as yyyy-mm-dd
+startDate = as.Date("2022-01-03")
+endDate = as.Date("2022-01-31")
+
+```
+
+
+
+```{r, echo=FALSE, warning=FALSE}
+# Import and clean raw data
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+rawData = read.csv("DJIA.csv")
+
+#   Data cleaning
+# Format dates to date type, format: yyyy-mm-dd
+rawData$DATE = as.Date(rawData$DATE, format = "%Y-%m-%d")
+periodLength = as.integer(endDate - startDate)
+
+# Convert closing figures to numeric
+rawData$DJIA = as.numeric(rawData$DJIA)
+
+# Remove non-trading days included in the data
+rawData = rawData[complete.cases(rawData), ]
+
+# Validate that start and end dates are in data set
+`%!in%` <- Negate(`%in%`)
+if(startDate %!in% rawData$DATE){
+    stop("The market was closed on the selected start date (holiday or weekend). Please select a new start date.")
+    }
+
+if(endDate %!in% rawData$DATE){
+    stop("The market was closed on the selected end date (holiday or weekend). Please select a new end date.")
+    }
+```
+
+```{r, echo=FALSE}
+subsetData = subset.data.frame(rawData, 
+                               rawData$DATE >= startDate & rawData$DATE <= endDate)
+periodLength = as.integer(endDate - startDate)
+totalTradingDays = length(subsetData$DJIA)
+
+
+highestCloseValue = max(subsetData$DJIA)
+lowestCloseValue = min(subsetData$DJIA)
+
+highestCloseDate = subsetData$DATE[match(highestCloseValue, subsetData$DJIA)]
+lowestCloseDate = subsetData$DATE[match(lowestCloseValue, subsetData$DJIA)]
+
+# Calculate percent change from prior day
+for (i in 2:totalTradingDays) {   
+    subsetData$perChange[i] = round((subsetData$DJIA[i]/subsetData$DJIA[i-1]) - 1,
+                                    digits = 5)
+}
+
+# Calculate absolute change from prior day
+for (i in 2:totalTradingDays) {   
+    subsetData$absChange[i] = round(subsetData$DJIA[i] - subsetData$DJIA[i-1],
+                                    digits = 2)
+}
+
+perStats = c(round(mean(subsetData$perChange, na.rm = TRUE), digits = 5),
+               round(sd(subsetData$perChange, na.rm = TRUE), digits = 5),
+               round(max(subsetData$perChange, na.rm = TRUE), digits = 5),
+               round(median(subsetData$perChange, na.rm = TRUE), digits = 5),
+               round(min(subsetData$perChange, na.rm = TRUE), digits = 5)
+               )
+
+absStats = c(round(mean(subsetData$absChange, na.rm = TRUE), digits = 2),
+               round(sd(subsetData$absChange, na.rm = TRUE), digits = 2),
+               round(max(subsetData$absChange, na.rm = TRUE), digits = 2),
+               round(median(subsetData$absChange, na.rm = TRUE), digits = 2),
+               round(min(subsetData$absChange, na.rm = TRUE), digits = 2)
+               )
+
+
+statsTable = data.frame(perStats, absStats)
+colnames(statsTable) = c("Percentage Change", "Absolute Change")
+rownames(statsTable) = c("Mean", "Std. Dev.", "Max", "Median", "Min")
+```
+
+## Basic Information & Summary Statistics  
+Reporting on Dow Jones closing figures from `r format(startDate, "%B %d %Y")` to `r format(endDate, "%B %d %Y")`.  
+**Highest Close:** $`r formatC(highestCloseValue, format = "f", digits = 2, big.mark=",")` on `r format(highestCloseDate, "%B %d, %Y")`  
+**Lowest Close:** $`r formatC(lowestCloseValue, format = "f", digits = 2, big.mark=",")` on `r format(lowestCloseDate, "%B %d, %Y")`  
+  
+`r knitr::kable(statsTable, align = "lll")`
+
+```{r, echo = FALSE, fig.align = 'left'}
+valueBarPlot = barplot(subsetData$DJIA,
+                       ylim = c(0.85 * min(subsetData$DJIA), 
+                                1.075 * max(subsetData$DJIA)),
+                       xpd = FALSE,
+                       xlab = "Date",
+                       ylab = "Valuation ($)",
+                       main = "Dow Jones Valuation",
+                       col = "royalblue1")
+box(bty="l")
+axis(1, at = valueBarPlot, format(subsetData$DATE, format = "%m-%d"))
+abline(a = mean(subsetData$DJIA), b = 0, lty = 2, lwd = 2)
+legend(x = "topleft", legend = c("Period Average"), lty = 2, lwd = 2)
+```
+\newpage
+```{r, echo = FALSE, fig.align = 'left'}
+absLinPlot <- plot(subsetData$absChange,
+                  xaxt = "n",
+                  xlab = "",
+                  ylab = "Change ($)",
+                  main = "Absolute Change from Prior Day",
+                  type = "b",
+                  pch = 21,
+                  bg = ifelse(subsetData$absChange < 0,'orangered','limegreen'),
+                  col = "black"
+                  )
+abline(a = 0, b = 0, lty = 2)
+```
+Throughout this period, the market closed `r ifelse(mean(na.omit(subsetData$absChange)) > 0, "higher", "lower")` than the previous day more often than not. Overall, the market `r ifelse(subsetData$DJIA[length(subsetData$DJIA)] < subsetData$DJIA[1], "suffered losses", "realized gains")`, with the Dow ending the period $`r formatC(abs(subsetData$DJIA[length(subsetData$DJIA)] - subsetData$DJIA[1]), format = "f", digits = 2, big.mark=",")` `r  ifelse(subsetData$DJIA[length(subsetData$DJIA)] < subsetData$DJIA[1], "down", "up")`.
+
+
+
+\newpage
+```{r, echo = FALSE, fig.align = 'left'}
+perBarPlot = barplot(subsetData$perChange,
+                     xlab = "Date",
+                     ylab = "Change (%)",
+                     main = "Percentage Change from Prior Day",
+                     col = ifelse(subsetData$perChange < 0,'orangered','limegreen')
+                     )
+axis(1, at = perBarPlot, format(subsetData$DATE, format = "%m-%d"))
+
+daysTable = data.frame(sum(na.omit(subsetData$perChange > 0)),
+                       sum(na.omit(subsetData$perChange < 0)))
+colnames(daysTable) = c("Up Days", "Down Days")
+
+```
+`r knitr::kable(daysTable, align = "lll")`
